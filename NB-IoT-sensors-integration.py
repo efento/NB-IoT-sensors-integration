@@ -25,6 +25,7 @@ conn = psycopg2.connect(
 )
 
 
+# Measurements - Class used to handle Measurement messages sent by the sensor
 class Measurements(resource.Resource):
 
     def __init__(self):
@@ -64,6 +65,7 @@ class Measurements(resource.Resource):
                                token=request.token, payload="")
 
 
+# DeviceInfo - Class used to handle Device Info messages sent by the sensor
 class DeviceInfo(resource.Resource):
 
     def __init__(self):
@@ -84,7 +86,8 @@ class DeviceInfo(resource.Resource):
                                token=request.token, payload="")
 
 
-class ConfigurationInfo(resource.Resource):
+# Configuration - Class used to handle Configuration messages sent by the sensor
+class Configuration(resource.Resource):
 
     def __init__(self):
         super().__init__()
@@ -92,11 +95,11 @@ class ConfigurationInfo(resource.Resource):
     async def render_post(self, request):
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload))]
-        # Create the file "Configinfo.txt" and save the date in this file
-        if not os.path.isfile("Configinfo.txt"):
-            file = open("Configinfo.txt", 'x')
+        # Create the file "Configuration.txt" and save the date in this file
+        if not os.path.isfile("Configuration.txt"):
+            file = open("Configuration.txt", 'x')
         else:
-            file = open("Configinfo.txt", 'w')
+            file = open("Configuration.txt", 'w')
         file.write(str(data))
         file.close()
         # returning "ACK" to the sensor
@@ -104,7 +107,8 @@ class ConfigurationInfo(resource.Resource):
                                token=request.token, payload="")
 
 
-class timestamp(resource.Resource):
+# Time - Class used to handle Time messages sent by the sensor
+class Time(resource.Resource):
 
     def __init__(self):
         super().__init__()
@@ -122,14 +126,14 @@ class timestamp(resource.Resource):
 def main():
     # Resource tree creation
     root = resource.Site()
-    # Set up "m" endpoint, which will be receiving the data sent by Efento NB-IoT sensor using POST method.
+    # Set up “m” endpoint, which will be receiving measurements sent by Efento NB-IoT sensor using POST method.
     root.add_resource(["m"], Measurements())
-    # Set up "i" endpoint, which will be receiving the data sent by Efento NB-IoT sensor using POST method.
+    # Set up “i” endpoint, which will be receiving device info messages sent by Efento NB-IoT sensor using POST method.
     root.add_resource(["i"], DeviceInfo())
-    # Set up "c" endpoint, which will be receiving the data sent by Efento NB-IoT sensor using POST method.
-    root.add_resource(["c"], ConfigurationInfo())
-    # Set up "t" endpoint, which will be receiving the data sent by Efento NB-IoT sensor using POST method.
-    root.add_resource(["t"], timestamp())
+    # Set up “c” endpoint, which will be receiving configuration messages sent by Efento NB-IoT sensor using POST method.
+    root.add_resource(["c"], Configuration())
+    # Set up “t” endpoint, which will be receiving time sent by Efento NB-IoT sensor using POST method.
+    root.add_resource(["t"], Time())
 
     # Starting the application on set IP address and port.
     asyncio.Task(aiocoap.Context.create_server_context(root, ("192.168.120.132", 5681)))
