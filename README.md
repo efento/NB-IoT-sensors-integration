@@ -8,6 +8,17 @@ This quick tutorial will show you how to set up a simple CoAP server, which rece
 Efento NB-IoT sensors send the data in Protobuf format using CoAP protocol. This guarantees fast transmissions and small size of data, which results in up to 10 years battery life time. Moreover, as both CoAP and Protobuf are popular standards, it’s easy to integrate Efento wireless sensors with any cloud platform or custom application. To learn more about CoAP and Protobuf, please visit our Knowledge Library.
 The Python Script we are going to write sets up the CoaP server. The server is constantly listening for data sent by Efento NB-IoT sensors. Once a new message arrives, the server parses the data, saves it in the PostgreSQL database and responds to the sensor with confirmation that the message has been received (code  2.01 “CREATED”). This means that the message has been successfully parsed and saved in the database. If anything goes wrong (e.g. database is down), the sensor will receive a response with code 5.00 “INTERNAL_SERVER_ERROR” . In that case, the NB-IoT sensor will retry to send the same data after a while.
 
+Important! The response time from the server to the sensor should be as short as possible. In real-life integrations, the data received by the server should be pushed to a queue, and server should reply with 2.01 CREATED as quickly as possible. Saving the data to the database before responding to the sensor decreases the sensor’s battery life time.
+
+![](https://lh6.googleusercontent.com/gfeMm1PboXI1jHs-7el3QrmaTYSk47EV1Yc2Txd1z05DVfA2Y-_4DtjK1ZegoGT2chbGKPUBjS0gP4m-b890FKmsALcnwATTmEpdi5YldJdpLzPKoU0Rxu1WU96kSjaBOtSJ_YB-)
+
+On top of the messages with the measurements, the sensor sends three other types of messages:
+
+- Configuration – these messages are sent by the sensor in order to synchronise its configuration with the server. On startup, the sensor will send its current configuration to the server. Later on, the message with sensor’s configuration is sent to the server any time the user reconfigures the device over Bluetooth or in case of any errors that sensor reports to the server (sensor sends the error codes). If the Configuration message contains an error code, it is confirmable and must be confirmed by the server. Otherwise, the Configuration messages are non-confirmable.
+- Device info – message contains detailed radio and battery statistics of the device. This message is sent to the server on device’s startup or on server’s request. The first Device Info message is sent by the sensor on startup and requires confirmation from the server. The Device Info messages sent on server’s request are non-confirmable.
+- Time – sensor’s request to the server used to obtain the current time. This message is sent by the sensor only in case when it is not able to receive the current time from the network. Time messages sent by the sensor to the server are always confirmable. The server returns current time stamp in the confirmation message’s payload.
+In this example, we are going to log the Configuration and Device info messages sent by the sensor to a file. In real-life integrations, the Configuration and Device Info may be ignored, but the device must receive confirmation (ACK with code 2.01 “CREATED”) to each confirmable messages sent to the server.
+
 # Before you start
 
 Before you start this, you will need to install and configure:
@@ -36,7 +47,7 @@ After downloading and installing PostgreSQL you will need to create the first da
 
   
 
-![](https://lh6.googleusercontent.com/gfeMm1PboXI1jHs-7el3QrmaTYSk47EV1Yc2Txd1z05DVfA2Y-_4DtjK1ZegoGT2chbGKPUBjS0gP4m-b890FKmsALcnwATTmEpdi5YldJdpLzPKoU0Rxu1WU96kSjaBOtSJ_YB-)
+
 
 DATABASE_HOST = 'localhost'
 DATABASE_USER = 'postgres';
@@ -116,13 +127,18 @@ Once you have the protbuf compiler, download the proto files, unzip the folder a
 
     protoc --python_out=.. proto_measurement_types.proto
     protoc --python_out=.. proto_measurements.proto
-
+    protoc --python_out=.. proto_device_info.proto
+    protoc --python_out=.. proto_config.proto
+    protoc --python_out=.. proto_rule.proto
   
 
 This will generate:
 
 -  " proto_measurement_types_pb2.py”,
 -  “proto_measurements_pb2.py”,
+-  “proto_device_info_pb2.py”,
+-  “proto_config_pb2.py”
+-  “proto_rule_pb2.py”
     
 
 in your specified destination directory. Move the files to your project directory (your_python_project/protos/protos_files). **Note! The repository with the sample code already contains classes resulting from compiling the proto files. If you use the sample code, you can skip this step.**
@@ -191,19 +207,6 @@ The CoAP server is constantly listening for data sent by Efento NB-IoT sensors. 
 
 ![](https://lh6.googleusercontent.com/Xj7NoZYfNIqbjqx5qi4yRmmBNEqzXGXNKL9F_TDaVe7VQbA089IrQcdNtc80fq3jkIUrO9zMMm_e2IS4ZYXGxs3y4MkadsVOrTNAIbEd-kviAofVSc8hGC3wc7lUtZjtflMHhRWS)
 
-## Compiling Protocol Buffers
-
-On top of the protobufs used in the first example, we will need two additional proto files: “proto_device_info.proto” - used to deserialize the device info frames and “proto_proto_config.proto” - used to send the server’s request to the sensor. Run the protocol buffer compiler protoc on your .proto files - open a terminal window and enter:
-
-    protoc --python_out=.. proto_device_info.proto
-    protoc --python_out=.. proto_proto_config.proto
-
-This will generate:
-
--   ”proto_device_info_pb2.py”,
--   and “proto_config_pb2.py”
-    
-in your specified destination directory. Move the files to your project directory (your_python_project/protos/protos_files). **Note! The repository with the sample code already contains classes resulting from compiling the proto files. If you use the sample code, you can skip this step.**
 
 ## Results
 
