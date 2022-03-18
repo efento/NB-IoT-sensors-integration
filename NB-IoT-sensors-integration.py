@@ -123,7 +123,7 @@ class Time(resource.Resource):
                                token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
 
 
-def main():
+async def main():
     # Resource tree creation
     root = resource.Site()
     # Set up “m” endpoint, which will be receiving measurements sent by Efento NB-IoT sensor using POST method
@@ -135,12 +135,12 @@ def main():
     # Set up “t” endpoint, which will be receiving time sent by Efento NB-IoT sensor using POST method
     root.add_resource(["t"], Time())
 
-    # Starting the application on set IP address and port.
-    asyncio.Task(aiocoap.Context.create_server_context(root, ("192.168.120.132", 5681)))
-    # Getting the current event loop and  running until stop() is called.
-    asyncio.get_event_loop().run_forever()
+    # Start the application on Your port and IP address.
+    await aiocoap.Context.create_server_context(root, ("192.168.120.103", 5681))
+    # Getting the current event loop and create an asyncio.Future object attached to the event loop.
+    await asyncio.get_running_loop().create_future()
 
 
 if __name__ == '__main__':
-    # Getting the current event loop and running until complete main()
-    asyncio.get_event_loop().run_until_complete(main())
+    # Run the coroutine, taking care of managing the asyncio event loop,
+    asyncio.run(main())
