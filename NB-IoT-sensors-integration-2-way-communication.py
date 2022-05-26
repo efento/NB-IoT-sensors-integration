@@ -13,7 +13,6 @@ from google.protobuf.json_format import MessageToDict
 import psycopg2
 
 # Enter your database host, database user, database password and database name
-
 DATABASE_HOST = 'host_name';
 DATABASE_USER = 'database_user';
 DATABASE_PASSWORD = 'database_password';
@@ -39,6 +38,7 @@ class Measurements(resource.Resource):
         # Creating a dictionary from a received message.
         data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload))]
         record = []
+        changeAt = []
         # Set request_device_info to true
         device_config = proto_config_pb2.ProtoConfig()
         device_config.request_device_info = True
@@ -49,15 +49,43 @@ class Measurements(resource.Resource):
         for measurement in data:
 
             for param in measurement['channels']:
-                # iteration in list data/measurement/channels/sampleOffsets.creating a list of sensor parameters(measured_at,serial_number, battery_status) and measurement results with sample offset
-                try:
-                    for sampleOffset in param['sampleOffsets']:
-                        record.extend([(datetime.datetime.fromtimestamp(param['timestamp']),
-                                        base64.b64decode((measurement['serialNum'])).hex(),
-                                        measurement['batteryStatus'],
-                                        param['type'], (param['startPoint'] + sampleOffset) / 10)])
-                except:
-                    print("")
+
+                # iteration in list data/measurement/channels/sampleOffsets.
+                # Creating a list of sensor parameters(measured_at,serial_number, battery_status)
+                # and measurement results with sample offset
+
+                if param != {}:
+                    if param['type'] == "MEASUREMENT_TYPE_OK_ALARM":
+                        numberOfMeasurements = 1 + (abs(param['sampleOffsets'][-1]) - 1) / measurement[
+                            'measurementPeriodBase']
+                        for sampleOffset in param['sampleOffsets']:
+                            timeDifference = measurement['measurementPeriodBase'] * int(
+                                (abs(sampleOffset - 1) / measurement['measurementPeriodBase']))
+                            if sampleOffset > 0:
+                                changeAt.extend([param['timestamp'] + timeDifference, "Alarm"])
+                            elif sampleOffset < 1:
+                                changeAt.extend([param['timestamp'] + timeDifference, "OK"])
+                        for measurementNumber in range(int(numberOfMeasurements)):
+                            timeDifference = measurement['measurementPeriodBase'] * measurementNumber
+                            if param['timestamp'] + timeDifference in changeAt:
+                                value = changeAt[changeAt.index(param['timestamp'] + timeDifference) + 1]
+                            record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
+                                            base64.b64decode((measurement['serialNum'])).hex(),
+                                            measurement['batteryStatus'],
+                                            param['type'].replace("MEASUREMENT_TYPE_",""), value)])
+                    else:
+                        for sampleOffset in param['sampleOffsets']:
+                            if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or param['type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
+                                value = (param['startPoint'] + sampleOffset) / 10
+                            else:
+                                value = param['startPoint'] + sampleOffset
+                            timeDifference = measurement['measurementPeriodBase'] * param['sampleOffsets'].index(
+                                sampleOffset)
+                            record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
+                                            base64.b64decode((measurement['serialNum'])).hex(),
+                                            measurement['batteryStatus'],
+                                            param['type'].replace("MEASUREMENT_TYPE_",""),
+                                            value)])
 
                 measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, value) VALUES (%s, %s, %s, %s, %s)"
                 with conn.cursor() as cur:
@@ -143,7 +171,7 @@ async def main():
     root.add_resource(["t"], Time())
 
     # Starting the application on set IP address and port.
-    await aiocoap.Context.create_server_context(root, ("192.168.120.103", 5681))
+    await aiocoap.Context.create_server_context(root, ("192.168.120.132", 5681))
     # Getting the current event loop and create an asyncio.Future object attached to the event loop.
     await asyncio.get_running_loop().create_future()
 
