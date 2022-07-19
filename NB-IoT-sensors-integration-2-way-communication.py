@@ -14,6 +14,10 @@ from protobuf import proto_config_pb2
 from google.protobuf.json_format import MessageToDict
 import psycopg2
 
+# Add new logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 # To save logs to a file set debug_logs to true
 debug_logs = True
 
@@ -39,7 +43,7 @@ class Measurements(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
-        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
+        logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a received message.
         data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload))]
         record = []
@@ -105,7 +109,7 @@ class Measurements(resource.Resource):
         # returning "ACK" and response payload to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
                                    token=request.token, payload=response_payload)
-        logging.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
+        logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
 
 
@@ -116,7 +120,7 @@ class DeviceInfo(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
-        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
+        logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload))]
         # Create the file "Deviceinfo.txt" and save the date in this file
@@ -130,7 +134,7 @@ class DeviceInfo(resource.Resource):
         # returning "ACK" to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
                                    token=request.token, payload="")
-        logging.info(" response: " + str(response))
+        logger.info(" response: " + str(response))
         return response
 
 
@@ -141,7 +145,7 @@ class Configuration(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
-        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
+        logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload))]
         # Create the file "Configuration.txt" and save the date in this file
@@ -155,7 +159,7 @@ class Configuration(resource.Resource):
         # returning "ACK" to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
                                    token=request.token, payload="")
-        logging.info(" response: " + str(response))
+        logger.info(" response: " + str(response))
         return response
 
 
@@ -166,14 +170,14 @@ class Time(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
-        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
+        logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         time_stamp = int(time.time())
         time_stamp_hex = hex(time_stamp)
 
         # returning timestamp to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
                                token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
-        logging.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
+        logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
 
 
@@ -198,7 +202,9 @@ async def main():
 if __name__ == '__main__':
     # Logging to a file
     if debug_logs is True:
-        logging.basicConfig(filename='logs.log', filemode="w", level=logging.INFO, format='%(asctime)s %(message)s',
-                            datefmt='%m/%d/%Y %I:%M:%S')
+        file_handler = logging.FileHandler(filename='logs.log', mode="w")
+        formatter = logging.Formatter('%(asctime)s %(message)s', '%m/%d/%Y %I:%M:%S')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     # Run the coroutine, taking care of managing the asyncio event loop,
     asyncio.run(main())
