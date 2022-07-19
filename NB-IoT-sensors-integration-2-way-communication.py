@@ -39,7 +39,7 @@ class Measurements(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
-
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a received message.
         data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload))]
         record = []
@@ -116,6 +116,7 @@ class DeviceInfo(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload))]
         # Create the file "Deviceinfo.txt" and save the date in this file
@@ -140,6 +141,7 @@ class Configuration(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload))]
         # Create the file "Configuration.txt" and save the date in this file
@@ -164,6 +166,7 @@ class Time(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         time_stamp = int(time.time())
         time_stamp_hex = hex(time_stamp)
 

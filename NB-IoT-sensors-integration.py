@@ -3,12 +3,16 @@ import datetime
 import asyncio
 import os.path
 import time
+import logging
 
 import aiocoap.resource as resource
 import aiocoap
 from protobuf import proto_measurements_pb2, proto_device_info_pb2, proto_config_pb2
 from google.protobuf.json_format import MessageToDict
 import psycopg2
+
+# To save logs to a file set debug_logs to true
+debug_logs = True
 
 # Enter your database host, database user, database password and database name
 DATABASE_HOST = 'host_name';
@@ -33,7 +37,7 @@ class Measurements(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
-
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload))]
         record = []
@@ -89,8 +93,10 @@ class Measurements(resource.Resource):
                     except (Exception, psycopg2.DatabaseError) as error:
                         print(error)
         # returning "ACK"  to the sensor
-        return aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                               token=request.token, payload="")
+        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+                                   token=request.token, payload="")
+        logging.info(" response: " + str(response))
+        return response
 
 
 # DeviceInfo - Class used to handle Device Info messages sent by the sensor
@@ -100,6 +106,7 @@ class DeviceInfo(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload))]
         # Create the file "Deviceinfo.txt" and save the date in this file
@@ -110,8 +117,10 @@ class DeviceInfo(resource.Resource):
         file.write(str(data))
         file.close()
         # returning "ACK" to the sensor
-        return aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
                                token=request.token, payload="")
+        logging.info(" response: " + str(response))
+        return response
 
 
 # Configuration - Class used to handle Configuration messages sent by the sensor
@@ -121,6 +130,7 @@ class Configuration(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload))]
         # Create the file "Configuration.txt" and save the date in this file
@@ -131,8 +141,10 @@ class Configuration(resource.Resource):
         file.write(str(data))
         file.close()
         # returning "ACK" to the sensor
-        return aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                               token=request.token, payload="")
+        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+                                   token=request.token, payload="")
+        logging.info(" response: " + str(response))
+        return response
 
 
 # Time - Class used to handle Time messages sent by the sensor
@@ -142,13 +154,15 @@ class Time(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
+        logging.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         time_stamp = int(time.time())
         time_stamp_hex = hex(time_stamp)
-        print(time_stamp_hex)
 
         # returning timestamp to the sensor
-        return aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
                                token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
+        logging.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
+        return response
 
 
 async def main():
@@ -170,5 +184,9 @@ async def main():
 
 
 if __name__ == '__main__':
+    # Logging to a file
+    if debug_logs is True:
+        logging.basicConfig(filename='logs.log', filemode="w", level=logging.INFO, format='%(asctime)s %(message)s',
+                            datefmt='%m/%d/%Y %I:%M:%S')
     # Run the coroutine, taking care of managing the asyncio event loop,
     asyncio.run(main())
