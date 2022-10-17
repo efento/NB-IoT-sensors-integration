@@ -96,15 +96,15 @@ class Measurements(resource.Resource):
                                             param['type'].replace("MEASUREMENT_TYPE_",""),
                                             value)])
 
-                measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, value) VALUES (%s, %s, %s, %s, %s)"
-                with conn.cursor() as cur:
-                    try:
-                        # inserting a list of sensor parameters and measurement to table in PostgresSQL
-                        cur.executemany(measurements, record)
-                        conn.commit()
-                        cur.close()
-                    except (Exception, psycopg2.DatabaseError) as error:
-                        print(error)
+        measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, value) VALUES (%s, %s, %s, %s, %s)"
+        with conn.cursor() as cur:
+            try:
+                # inserting a list of sensor parameters and measurement to table in PostgresSQL
+                cur.executemany(measurements, record)
+                conn.commit()
+                cur.close()
+            except (Exception, psycopg2.DatabaseError) as error:
+                print(error)
 
         # returning "ACK" and response payload to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
