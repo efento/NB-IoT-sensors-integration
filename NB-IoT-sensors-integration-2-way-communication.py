@@ -83,19 +83,19 @@ class Measurements(resource.Resource):
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_",""), value)])
                     else:
-                        for sampleOffset in param['sampleOffsets']:
+                        for index, sampleOffset in enumerate(param['sampleOffsets']):
                             if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or param['type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
                                 value = (param['startPoint'] + sampleOffset) / 10
                             else:
                                 value = param['startPoint'] + sampleOffset
-                            timeDifference = measurement['measurementPeriodBase'] * param['sampleOffsets'].index(
-                                sampleOffset)
+                            timeDifference = measurement['measurementPeriodBase'] * index
+
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
-                                            param['type'].replace("MEASUREMENT_TYPE_",""),
+                                            param['type'].replace("MEASUREMENT_TYPE_", ""),
                                             value)])
-
+        print(record)
         measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, value) VALUES (%s, %s, %s, %s, %s)"
         with conn.cursor() as cur:
             try:
@@ -103,11 +103,13 @@ class Measurements(resource.Resource):
                 cur.executemany(measurements, record)
                 conn.commit()
                 cur.close()
+                code = aiocoap.Code.CREATED
             except (Exception, psycopg2.DatabaseError) as error:
                 print(error)
+                code = aiocoap.Code.INTERNAL_SERVER_ERROR
 
         # returning "ACK" and response payload to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+        response = aiocoap.Message(mtype=aiocoap.ACK, code=code,
                                    token=request.token, payload=response_payload)
         logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
