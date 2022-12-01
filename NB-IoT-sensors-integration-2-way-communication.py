@@ -103,11 +103,13 @@ class Measurements(resource.Resource):
                 cur.executemany(measurements, record)
                 conn.commit()
                 cur.close()
+                code = aiocoap.Code.CREATED
             except (Exception, psycopg2.DatabaseError) as error:
                 print(error)
+                code = aiocoap.Code.INTERNAL_SERVER_ERROR
 
         # returning "ACK" and response payload to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+        response = aiocoap.Message(mtype=aiocoap.ACK, code=code,
                                    token=request.token, payload=response_payload)
         logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
