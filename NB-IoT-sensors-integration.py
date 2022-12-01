@@ -74,17 +74,18 @@ class Measurements(resource.Resource):
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_", ""), value)])
                     else:
-                        for sampleOffset in param['sampleOffsets']:
-                            if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or param['type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
+                        for index, sampleOffset in enumerate(param['sampleOffsets']):
+                            if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or param[
+                                'type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
                                 value = (param['startPoint'] + sampleOffset) / 10
                             else:
                                 value = param['startPoint'] + sampleOffset
-                            timeDifference = measurement['measurementPeriodBase'] * param['sampleOffsets'].index(
-                                sampleOffset)
+                            timeDifference = measurement['measurementPeriodBase'] * index
+
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
-                                            param['type'].replace("MEASUREMENT_TYPE_",""),
+                                            param['type'].replace("MEASUREMENT_TYPE_", ""),
                                             value)])
         measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, value) VALUES (%s, %s, %s, %s, %s)"
         with conn.cursor() as cur:
