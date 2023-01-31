@@ -5,7 +5,6 @@ import os.path
 import time
 import logging
 
-
 import aiocoap.resource as resource
 import aiocoap
 from protobuf import proto_measurements_pb2
@@ -36,6 +35,21 @@ conn = psycopg2.connect(
 )
 
 
+class Tools:
+
+    def __init__(self):
+        self.time = int(time.time())
+
+    def setTimestamp(self):
+        # Serializing device config.
+        device_config = proto_config_pb2.ProtoConfig()
+        # Set request_device_info to true
+        device_config.request_device_info = True
+        # Set current timestamp
+        device_config.current_time = self.time
+        return device_config.SerializeToString()
+
+
 # Measurements - Class used to handle Measurement messages sent by the sensor
 class Measurements(resource.Resource):
 
@@ -46,56 +60,53 @@ class Measurements(resource.Resource):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a received message.
         data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload))]
+
         record = []
         changeAt = []
-        # Set request_device_info to true
-        device_config = proto_config_pb2.ProtoConfig()
-        device_config.request_device_info = True
-        # Serializing device config.
-        response_payload = device_config.SerializeToString()
+        tools = Tools()
+        response_payload = tools.setTimestamp()
 
         # iteration in list data
         for measurement in data:
+            measurementPeriod = measurement['measurementPeriodBase'] * measurement['measurementPeriodFactor']
 
             for param in measurement['channels']:
-
                 # iteration in list data/measurement/channels/sampleOffsets.
                 # Creating a list of sensor parameters(measured_at,serial_number, battery_status)
                 # and measurement results with sample offset
-
                 if param != {}:
                     if param['type'] == "MEASUREMENT_TYPE_OK_ALARM":
-                        numberOfMeasurements = 1 + (abs(param['sampleOffsets'][-1]) - 1) / measurement[
-                            'measurementPeriodBase']
+                        numberOfMeasurements = 1 + (abs(param['sampleOffsets'][-1]) - 1) / measurementPeriod
                         for sampleOffset in param['sampleOffsets']:
-                            timeDifference = measurement['measurementPeriodBase'] * int(
-                                (abs(sampleOffset - 1) / measurement['measurementPeriodBase']))
+                            timeDifference = measurementPeriod * int(
+                                (abs(sampleOffset - 1) / measurementPeriod))
                             if sampleOffset > 0:
                                 changeAt.extend([param['timestamp'] + timeDifference, "Alarm"])
                             elif sampleOffset < 1:
                                 changeAt.extend([param['timestamp'] + timeDifference, "OK"])
                         for measurementNumber in range(int(numberOfMeasurements)):
-                            timeDifference = measurement['measurementPeriodBase'] * measurementNumber
+                            timeDifference = measurementPeriod * measurementNumber
                             if param['timestamp'] + timeDifference in changeAt:
                                 value = changeAt[changeAt.index(param['timestamp'] + timeDifference) + 1]
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
-                                            param['type'].replace("MEASUREMENT_TYPE_",""), value)])
+                                            param['type'].replace("MEASUREMENT_TYPE_", ""), value)])
                     else:
                         for index, sampleOffset in enumerate(param['sampleOffsets']):
-                            if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or param['type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
+                            if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or param[
+                                'type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
                                 value = (param['startPoint'] + sampleOffset) / 10
                             else:
                                 value = param['startPoint'] + sampleOffset
-                            timeDifference = measurement['measurementPeriodBase'] * index
+                            timeDifference = measurementPeriod * index
 
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_", ""),
                                             value)])
-        print(record)
+
         measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, value) VALUES (%s, %s, %s, %s, %s)"
         with conn.cursor() as cur:
             try:
@@ -125,6 +136,9 @@ class DeviceInfo(resource.Resource):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload))]
+        tools = Tools()
+        response_payload = tools.setTimestamp()
+
         # Create the file "Deviceinfo.txt" and save the date in this file
         if not os.path.isfile("Deviceinfo.txt"):
             file = open("Deviceinfo.txt", 'x')
@@ -135,7 +149,7 @@ class DeviceInfo(resource.Resource):
 
         # returning "ACK" to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                                   token=request.token, payload="")
+                                   token=request.token, payload=response_payload)
         logger.info(" response: " + str(response))
         return response
 
@@ -147,9 +161,12 @@ class Configuration(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
+
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload))]
+        tools = Tools()
+        response_payload = tools.setTimestamp()
         # Create the file "Configuration.txt" and save the date in this file
         if not os.path.isfile("Configuration.txt"):
             file = open("Configuration.txt", 'x')
@@ -160,7 +177,7 @@ class Configuration(resource.Resource):
 
         # returning "ACK" to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                                   token=request.token, payload="")
+                                   token=request.token, payload=response_payload)
         logger.info(" response: " + str(response))
         return response
 
@@ -178,7 +195,7 @@ class Time(resource.Resource):
 
         # returning timestamp to the sensor
         response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                               token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
+                                   token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
         logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
 
