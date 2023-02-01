@@ -45,7 +45,7 @@ class Tools:
         device_config = proto_config_pb2.ProtoConfig()
         # Set request_device_info to true
         device_config.request_device_info = True
-        # Set current timestamp
+        # Sending current time to the sensor in order to synchronise its internal clock
         device_config.current_time = self.time
         return device_config.SerializeToString()
 
