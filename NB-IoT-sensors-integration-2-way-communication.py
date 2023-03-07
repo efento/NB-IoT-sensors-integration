@@ -59,7 +59,7 @@ class Measurements(resource.Resource):
     async def render_post(self, request):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a received message.
-        data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload))]
+        data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload), True)]
 
         record = []
         changeAt = []
@@ -135,7 +135,7 @@ class DeviceInfo(resource.Resource):
     async def render_post(self, request):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
-        data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload))]
+        data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload), True)]
         tools = Tools()
         response_payload = tools.setTimestamp()
 
@@ -164,7 +164,7 @@ class Configuration(resource.Resource):
 
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
-        data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload))]
+        data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload), True)]
         tools = Tools()
         response_payload = tools.setTimestamp()
         # Create the file "Configuration.txt" and save the date in this file
