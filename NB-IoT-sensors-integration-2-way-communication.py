@@ -16,7 +16,6 @@ import psycopg2
 # Add new logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
 # To save logs to a file set debug_logs to true
 debug_logs = True
 
@@ -57,7 +56,6 @@ class Measurements(resource.Resource):
         super().__init__()
 
     async def render_post(self, request):
-        logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a received message.
         data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload), True)]
 
@@ -69,6 +67,10 @@ class Measurements(resource.Resource):
         # iteration in list data
         for measurement in data:
             measurementPeriod = measurement['measurementPeriodBase'] * measurement['measurementPeriodFactor']
+            # Keep this log format to facilitate troubleshooting with Efento support
+            logger.info(" request: " + str(request) + " serial number: " + str(
+                base64.b64decode((measurement['serialNum'])).hex()) + " payload: " + str(
+                request.payload.hex()))
 
             for param in measurement['channels']:
                 # iteration in list data/measurement/channels/sampleOffsets.
@@ -78,8 +80,7 @@ class Measurements(resource.Resource):
                     if param['type'] == "MEASUREMENT_TYPE_OK_ALARM":
                         numberOfMeasurements = 1 + (abs(param['sampleOffsets'][-1]) - 1) / measurementPeriod
                         for sampleOffset in param['sampleOffsets']:
-                            timeDifference = measurementPeriod * int(
-                                (abs(sampleOffset - 1) / measurementPeriod))
+                            timeDifference = abs(sampleOffset) - 1
                             if sampleOffset > 0:
                                 changeAt.extend([param['timestamp'] + timeDifference, "Alarm"])
                             elif sampleOffset < 1:
