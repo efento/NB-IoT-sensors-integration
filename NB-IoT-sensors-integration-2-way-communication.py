@@ -12,6 +12,7 @@ from protobuf import proto_device_info_pb2
 from protobuf import proto_config_pb2
 from google.protobuf.json_format import MessageToDict
 import psycopg2
+import math
 
 # Add new logger
 logger = logging.getLogger(__name__)
@@ -54,9 +55,35 @@ class Measurements(resource.Resource):
 
     def __init__(self):
         super().__init__()
+        self.majorValues = []
+        self.calibrationRequired = []
+
+    # Creating an array of major values.
+    def major_counter(self, param):
+        majorValues = []
+        calibrationRequired = []
+        for sampleOffset in param['sampleOffsets']:
+            if param['type'] == "MEASUREMENT_TYPE_PULSE_CNT_ACC_MAJOR" or \
+                    param['type'] == "MEASUREMENT_TYPE_ELEC_METER_ACC_MAJOR":
+                metaData = param['startPoint'] % 4
+                value = (math.ceil(param['startPoint'] / 4) + sampleOffset) * 1000
+            else:
+                metaData = param['startPoint'] % 4
+                value = (math.ceil(param['startPoint'] / 4) + sampleOffset) * 100
+
+            if metaData != 0:
+                calibrationRequired.append(True)
+            else:
+                calibrationRequired.append(False)
+
+            majorValues.append(value)
+
+        self.majorValues = majorValues
+        self.calibrationRequired = calibrationRequired
 
     async def render_post(self, request):
         # Creating a dictionary from a received message.
+
         data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload), True)]
 
         record = []
@@ -93,10 +120,33 @@ class Measurements(resource.Resource):
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_", ""), value)])
+
+                    elif param['type'] == "MEASUREMENT_TYPE_PULSE_CNT_ACC_MAJOR" or \
+                            param['type'] == "MEASUREMENT_TYPE_WATER_METER_ACC_MAJOR" or \
+                            param['type'] == "MEASUREMENT_TYPE_ELEC_METER_ACC_MAJOR":
+                        self.major_counter(param)
+                    elif param['type'] == "MEASUREMENT_TYPE_PULSE_CNT_ACC_MINOR" or \
+                            param['type'] == "MEASUREMENT_TYPE_WATER_METER_ACC_MINOR" or \
+                            param['type'] == "MEASUREMENT_TYPE_ELEC_METER_ACC_MINOR":
+                        for index, sampleOffset in enumerate(param['sampleOffsets']):
+                            # Summing up Major value and Minor values.
+                            if self.calibrationRequired[index]:
+                                value = str(self.majorValues[index] + math.ceil(
+                                    param['startPoint'] / 4) + sampleOffset) + ' Calibration required'
+                            else:
+                                value = self.majorValues[index] + param[
+                                    'startPoint'] // 6 + sampleOffset
+                            timeDifference = measurementPeriod * index
+                            record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
+                                            base64.b64decode((measurement['serialNum'])).hex(),
+                                            measurement['batteryStatus'],
+                                            param['type'].replace("MEASUREMENT_TYPE_", "").replace("_MINOR", ""),
+                                            value)])
+
                     else:
                         for index, sampleOffset in enumerate(param['sampleOffsets']):
-                            if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or param[
-                                'type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
+                            if param['type'] == "MEASUREMENT_TYPE_TEMPERATURE" or \
+                                    param['type'] == "MEASUREMENT_TYPE_ATMOSPHERIC_PRESSURE":
                                 value = (param['startPoint'] + sampleOffset) / 10
                             else:
                                 value = param['startPoint'] + sampleOffset
