@@ -66,10 +66,10 @@ class Measurements(resource.Resource):
             if param['type'] == "MEASUREMENT_TYPE_PULSE_CNT_ACC_MAJOR" or \
                     param['type'] == "MEASUREMENT_TYPE_ELEC_METER_ACC_MAJOR":
                 metaData = param['startPoint'] % 4
-                value = (math.ceil(param['startPoint'] / 4) + sampleOffset) * 1000
+                value = (math.floor(param['startPoint'] / 4) + sampleOffset) * 1000
             else:
                 metaData = param['startPoint'] % 4
-                value = (math.ceil(param['startPoint'] / 4) + sampleOffset) * 100
+                value = (math.floor(param['startPoint'] / 4) + sampleOffset) * 100
 
             if metaData != 0:
                 calibrationRequired.append(True)
@@ -131,8 +131,8 @@ class Measurements(resource.Resource):
                         for index, sampleOffset in enumerate(param['sampleOffsets']):
                             # Summing up Major value and Minor values.
                             if self.calibrationRequired[index]:
-                                value = str(self.majorValues[index] + math.ceil(
-                                    param['startPoint'] / 4) + sampleOffset) + ' Calibration required'
+                                value = str(self.majorValues[index] + math.floor(
+                                    param['startPoint'] / 6) + sampleOffset) + ' Calibration required'
                             else:
                                 value = self.majorValues[index] + param[
                                     'startPoint'] // 6 + sampleOffset
