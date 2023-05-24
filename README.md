@@ -58,8 +58,7 @@ DATABASE_NAME = 'postgres';
 
 If you want to, you can change the names / credentials. Write them down, as they will be needed in the next steps. If you want to check database credentials, open pgAdmin in the PostgreSQL folder. Next open **Object -> Properties -> General**
 
-  
-  
+
 
 ![](https://lh3.googleusercontent.com/HWY9bIZjX3RSSPpQ-ju6PgwIJQN9-a9_wMuW6Wxj519QCiXhRTMrlnv_BMVMDdkw54aJKxW7Bjw8C2UoVSFeV7ldTP5yvNXuGlsbnFcdn0KWAlfEhgnnB8puEPhNT_MY7MdXWbPC)
 
@@ -69,7 +68,7 @@ If you want to, you can change the names / credentials. Write them down, as they
 
   
 
-To save the measurements coming from Efento Gateway in your database, you need to create a table. In this example, we are creating a very simple table to store all the data from the sensors, no matter what the sensor type. The table will have 5 columns, all of them of “text” type. **Please note that this architecture of the database is only for the demonstration purposes. Database structure should be selected according to your project requirements.**
+To save the measurements coming from Efento Gateway in your database, you need to create a table. In this example, we are creating a very simple table to store all the data from the sensors, no matter what the sensor type. The table will have 6 columns, all of them of “text” type. **Please note that this architecture of the database is only for the demonstration purposes. Database structure should be selected according to your project requirements.**
 
 You can create the table manually, using pgAdmin’s interface or using a SQL query. In pgAdmin select your database, open Tools menu: Tools -> Query Tools. Copy the request below into the **Query Editor** and **click Execute (▶) :**
 
@@ -81,6 +80,7 @@ You can create the table manually, using pgAdmin’s interface or using a SQL qu
     serial_number text ,
     battery_ok text ,
     type text,
+    channel text,
     value text);
 
   

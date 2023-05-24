@@ -98,11 +98,13 @@ class Measurements(resource.Resource):
             logger.info(" request: " + str(request) + " serial number: " + str(
                 base64.b64decode((measurement['serialNum'])).hex()) + " payload: " + str(
                 request.payload.hex()))
-
-            for param in measurement['channels']:
+            channelNumberForAcc = 0
+            for paramIndex, param in enumerate(measurement['channels']):
                 # iteration in list data/measurement/channels/sampleOffsets.
-                # Creating a list of sensor parameters(measured_at,serial_number, battery_status)
+                # Creating a list of sensor parameters(measured_at,serial_number, battery_status, channel)
                 # and measurement results with sample offset
+
+                channelNumber = paramIndex + 1
                 if param != {}:
                     if param['type'] == "MEASUREMENT_TYPE_OK_ALARM":
                         numberOfMeasurements = 1 + (abs(param['sampleOffsets'][-1]) - 1) / measurementPeriod
@@ -119,7 +121,7 @@ class Measurements(resource.Resource):
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
-                                            param['type'].replace("MEASUREMENT_TYPE_", ""), value)])
+                                            param['type'].replace("MEASUREMENT_TYPE_", ""), channelNumber, value)])
 
                     elif param['type'] == "MEASUREMENT_TYPE_PULSE_CNT_ACC_MAJOR" or \
                             param['type'] == "MEASUREMENT_TYPE_WATER_METER_ACC_MAJOR" or \
@@ -128,6 +130,7 @@ class Measurements(resource.Resource):
                     elif param['type'] == "MEASUREMENT_TYPE_PULSE_CNT_ACC_MINOR" or \
                             param['type'] == "MEASUREMENT_TYPE_WATER_METER_ACC_MINOR" or \
                             param['type'] == "MEASUREMENT_TYPE_ELEC_METER_ACC_MINOR":
+                        channelNumberForAcc = channelNumberForAcc + 1
                         for index, sampleOffset in enumerate(param['sampleOffsets']):
                             # Summing up Major value and Minor values.
                             if self.calibrationRequired[index]:
@@ -141,7 +144,7 @@ class Measurements(resource.Resource):
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_", "").replace("_MINOR", ""),
-                                            value)])
+                                            channelNumberForAcc, value)])
 
                     else:
                         for index, sampleOffset in enumerate(param['sampleOffsets']):
@@ -155,10 +158,11 @@ class Measurements(resource.Resource):
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
                                             base64.b64decode((measurement['serialNum'])).hex(),
                                             measurement['batteryStatus'],
-                                            param['type'].replace("MEASUREMENT_TYPE_", ""),
+                                            param['type'].replace("MEASUREMENT_TYPE_", ""), channelNumber,
                                             value)])
 
-        measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, value) VALUES (%s, %s, %s, %s, %s)"
+        measurements = "INSERT INTO measurements(measured_at, serial_number, battery_ok, type, channel, value)" \
+                       " VALUES (%s, %s, %s, %s, %s, %s)"
         with conn.cursor() as cur:
             try:
                 # inserting a list of sensor parameters and measurement to table in PostgresSQL
