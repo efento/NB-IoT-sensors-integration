@@ -65,11 +65,11 @@ class Measurements(resource.Resource):
         for sampleOffset in param['sampleOffsets']:
             if param['type'] == "MEASUREMENT_TYPE_PULSE_CNT_ACC_MAJOR" or \
                     param['type'] == "MEASUREMENT_TYPE_ELEC_METER_ACC_MAJOR":
-                metaData = param['startPoint'] % 4
-                value = (math.floor(param['startPoint'] / 4) + sampleOffset) * 1000
+                metaData = (param['startPoint'] + sampleOffset) % 4
+                value = math.floor((param['startPoint'] + sampleOffset) / 4) * 1000
             else:
-                metaData = param['startPoint'] % 4
-                value = (math.floor(param['startPoint'] / 4) + sampleOffset) * 100
+                metaData = (param['startPoint'] + sampleOffset) % 4
+                value = math.floor((param['startPoint'] + sampleOffset) / 4) * 100
 
             if metaData != 0:
                 calibrationRequired.append(True)
@@ -135,10 +135,9 @@ class Measurements(resource.Resource):
                             # Summing up Major value and Minor values.
                             if self.calibrationRequired[index]:
                                 value = str(self.majorValues[index] + math.floor(
-                                    param['startPoint'] / 6) + sampleOffset) + ' Calibration required'
+                                    (param['startPoint'] + sampleOffset) / 6)) + ' Calibration required'
                             else:
-                                value = self.majorValues[index] + param[
-                                    'startPoint'] // 6 + sampleOffset
+                                value = self.majorValues[index] + ((param['startPoint'] + sampleOffset) // 6)
                             timeDifference = measurementPeriod * index
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
                                             base64.b64decode((measurement['serialNum'])).hex(),
