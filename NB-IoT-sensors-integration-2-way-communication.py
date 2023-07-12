@@ -40,7 +40,7 @@ class Tools:
     def __init__(self):
         self.time = int(time.time())
 
-    def setTimestamp(self):
+    def set_timestamp(self):
         # Serializing device config.
         device_config = proto_config_pb2.ProtoConfig()
         # Set request_device_info to true
@@ -48,6 +48,12 @@ class Tools:
         # Sending current time to the sensor in order to synchronise its internal clock
         device_config.current_time = self.time
         return device_config.SerializeToString()
+
+    def set_message_type(self, request_message_type):
+        if request_message_type == aiocoap.NON:
+            return aiocoap.NON
+        if request_message_type == aiocoap.CON:
+            return aiocoap.ACK
 
 
 # Measurements - Class used to handle Measurement messages sent by the sensor
@@ -89,7 +95,7 @@ class Measurements(resource.Resource):
         record = []
         changeAt = []
         tools = Tools()
-        response_payload = tools.setTimestamp()
+        response_payload = tools.set_timestamp()
 
         # iteration in list data
         for measurement in data:
@@ -174,7 +180,7 @@ class Measurements(resource.Resource):
                 code = aiocoap.Code.INTERNAL_SERVER_ERROR
 
         # returning "ACK" and response payload to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=code,
+        response = aiocoap.Message(mtype=tools.set_message_type(request.mtype), code=code,
                                    token=request.token, payload=response_payload)
         logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
@@ -191,7 +197,7 @@ class DeviceInfo(resource.Resource):
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload), True)]
         tools = Tools()
-        response_payload = tools.setTimestamp()
+        response_payload = tools.set_timestamp()
 
         # Create the file "Deviceinfo.txt" and save the date in this file
         if not os.path.isfile("Deviceinfo.txt"):
@@ -202,7 +208,7 @@ class DeviceInfo(resource.Resource):
         file.close()
 
         # returning "ACK" to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+        response = aiocoap.Message(mtype=tools.set_message_type(request.mtype), code=aiocoap.Code.CREATED,
                                    token=request.token, payload=response_payload)
         logger.info(" response: " + str(response))
         return response
@@ -220,7 +226,7 @@ class Configuration(resource.Resource):
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload), True)]
         tools = Tools()
-        response_payload = tools.setTimestamp()
+        response_payload = tools.set_timestamp()
         # Create the file "Configuration.txt" and save the date in this file
         if not os.path.isfile("Configuration.txt"):
             file = open("Configuration.txt", 'x')
@@ -230,7 +236,7 @@ class Configuration(resource.Resource):
         file.close()
 
         # returning "ACK" to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+        response = aiocoap.Message(mtype=tools.set_message_type(request.mtype), code=aiocoap.Code.CREATED,
                                    token=request.token, payload=response_payload)
         logger.info(" response: " + str(response))
         return response
@@ -248,7 +254,7 @@ class Time(resource.Resource):
         time_stamp_hex = hex(time_stamp)
 
         # returning timestamp to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
+        response = aiocoap.Message(mtype=tools.set_message_type(request.mtype), code=aiocoap.Code.CONTENT,
                                    token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
         logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
