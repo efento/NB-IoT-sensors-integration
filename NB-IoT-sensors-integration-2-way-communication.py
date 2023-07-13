@@ -49,11 +49,17 @@ class Tools:
         device_config.current_time = self.time
         return device_config.SerializeToString()
 
-    def set_response_code(self, request_message_type, code):
+    def create_response(self, request_message_type, token, code, payload, ):
         if request_message_type == aiocoap.NON:
-            return aiocoap.Code.EMPTY
+
+            return aiocoap.NoResponse
         else:
-            return code
+            # returning "ACK" and response payload to the sensor
+            response = aiocoap.Message(mtype=aiocoap.ACK, code=code,
+                                       token=token, payload=payload)
+
+            logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
+            return response
 
 
 # Measurements - Class used to handle Measurement messages sent by the sensor
@@ -179,11 +185,7 @@ class Measurements(resource.Resource):
                 print(error)
                 code = aiocoap.Code.INTERNAL_SERVER_ERROR
 
-        # returning "ACK" and response payload to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=tools.set_response_code(request.mtype, code),
-                                   token=request.token, payload=response_payload)
-        logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
-        return response
+        return tools.create_response(request.mtype, request.token, code, response_payload)
 
 
 # DeviceInfo - Class used to handle Device Info messages sent by the sensor
@@ -207,11 +209,7 @@ class DeviceInfo(resource.Resource):
         file.write(str(data))
         file.close()
 
-        # returning "ACK" to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=tools.set_response_code(request.mtype, aiocoap.Code.CREATED),
-                                   token=request.token, payload=response_payload)
-        logger.info(" response: " + str(response))
-        return response
+        return tools.create_response(request.mtype, request.token, aiocoap.Code.CREATED, response_payload)
 
 
 # Configuration - Class used to handle Configuration messages sent by the sensor
@@ -235,11 +233,7 @@ class Configuration(resource.Resource):
         file.write(str(data))
         file.close()
 
-        # returning "ACK" to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=tools.set_response_code(request.mtype, aiocoap.Code.CREATED),
-                                   token=request.token, payload=response_payload)
-        logger.info(" response: " + str(response))
-        return response
+        return tools.create_response(request.mtype, request.token, aiocoap.Code.CREATED, response_payload)
 
 
 # Time - Class used to handle Time messages sent by the sensor
@@ -252,9 +246,8 @@ class Time(resource.Resource):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         time_stamp = int(time.time())
         time_stamp_hex = hex(time_stamp)
-        tools = Tools()
         # returning timestamp to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=tools.set_response_code(request.mtype, aiocoap.Code.CONTENT),
+        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CONTENT,
                                    token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
         logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
         return response
