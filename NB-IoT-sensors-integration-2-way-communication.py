@@ -40,7 +40,7 @@ class Tools:
     def __init__(self):
         self.time = int(time.time())
 
-    def setTimestamp(self):
+    def set_timestamp(self):
         # Serializing device config.
         device_config = proto_config_pb2.ProtoConfig()
         # Set request_device_info to true
@@ -48,6 +48,18 @@ class Tools:
         # Sending current time to the sensor in order to synchronise its internal clock
         device_config.current_time = self.time
         return device_config.SerializeToString()
+
+    def create_response(self, request_message_type, token, code, payload, ):
+        if request_message_type == aiocoap.NON:
+
+            return aiocoap.NoResponse
+        else:
+            # returning "ACK" and response payload to the sensor
+            response = aiocoap.Message(mtype=aiocoap.ACK, code=code,
+                                       token=token, payload=payload)
+
+            logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
+            return response
 
 
 # Measurements - Class used to handle Measurement messages sent by the sensor
@@ -89,7 +101,7 @@ class Measurements(resource.Resource):
         record = []
         changeAt = []
         tools = Tools()
-        response_payload = tools.setTimestamp()
+        response_payload = tools.set_timestamp()
 
         # iteration in list data
         for measurement in data:
@@ -173,11 +185,7 @@ class Measurements(resource.Resource):
                 print(error)
                 code = aiocoap.Code.INTERNAL_SERVER_ERROR
 
-        # returning "ACK" and response payload to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=code,
-                                   token=request.token, payload=response_payload)
-        logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
-        return response
+        return tools.create_response(request.mtype, request.token, code, response_payload)
 
 
 # DeviceInfo - Class used to handle Device Info messages sent by the sensor
@@ -191,7 +199,7 @@ class DeviceInfo(resource.Resource):
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload), True)]
         tools = Tools()
-        response_payload = tools.setTimestamp()
+        response_payload = tools.set_timestamp()
 
         # Create the file "Deviceinfo.txt" and save the date in this file
         if not os.path.isfile("Deviceinfo.txt"):
@@ -201,11 +209,7 @@ class DeviceInfo(resource.Resource):
         file.write(str(data))
         file.close()
 
-        # returning "ACK" to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                                   token=request.token, payload=response_payload)
-        logger.info(" response: " + str(response))
-        return response
+        return tools.create_response(request.mtype, request.token, aiocoap.Code.CREATED, response_payload)
 
 
 # Configuration - Class used to handle Configuration messages sent by the sensor
@@ -220,7 +224,7 @@ class Configuration(resource.Resource):
         # Creating a dictionary from a message received from a sensor
         data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload), True)]
         tools = Tools()
-        response_payload = tools.setTimestamp()
+        response_payload = tools.set_timestamp()
         # Create the file "Configuration.txt" and save the date in this file
         if not os.path.isfile("Configuration.txt"):
             file = open("Configuration.txt", 'x')
@@ -229,11 +233,7 @@ class Configuration(resource.Resource):
         file.write(str(data))
         file.close()
 
-        # returning "ACK" to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                                   token=request.token, payload=response_payload)
-        logger.info(" response: " + str(response))
-        return response
+        return tools.create_response(request.mtype, request.token, aiocoap.Code.CREATED, response_payload)
 
 
 # Time - Class used to handle Time messages sent by the sensor
@@ -244,14 +244,13 @@ class Time(resource.Resource):
 
     async def render_post(self, request):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
+        tools = Tools()
         time_stamp = int(time.time())
         time_stamp_hex = hex(time_stamp)
-
         # returning timestamp to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CREATED,
-                                   token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
-        logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
-        return response
+
+        return tools.create_response(request.mtype, request.token, aiocoap.Code.CONTENT,
+                                     bytearray.fromhex(time_stamp_hex[2:]))
 
 
 async def main():
