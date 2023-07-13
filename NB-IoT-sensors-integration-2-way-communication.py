@@ -244,13 +244,13 @@ class Time(resource.Resource):
 
     async def render_post(self, request):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
+        tools = Tools()
         time_stamp = int(time.time())
         time_stamp_hex = hex(time_stamp)
         # returning timestamp to the sensor
-        response = aiocoap.Message(mtype=aiocoap.ACK, code=aiocoap.Code.CONTENT,
-                                   token=request.token, payload=bytearray.fromhex(time_stamp_hex[2:]))
-        logger.info(" response: " + str(response) + " payload: " + str(response.payload.hex()))
-        return response
+
+        return tools.create_response(request.mtype, request.token, aiocoap.Code.CONTENT,
+                                     bytearray.fromhex(time_stamp_hex[2:]))
 
 
 async def main():
