@@ -1,3 +1,9 @@
 *.log
 .idea/
-protobuf/__pycache__/
+__pycache__/
+*.pyc
+.env
+protobuf/*_pb2.py
+Deviceinfo.txt
+Configuration.txt
+ExtendedConfiguration.txt
