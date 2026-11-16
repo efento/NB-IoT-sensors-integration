@@ -1,224 +1,355 @@
-# NB-IoT-sensors-integration
+# NB-IoT Loggers Integration
 
+This tutorial explains how to set up a simple CoAP server in Python to receive data from Efento NB-IoT loggers and store measurements in a PostgreSQL database. The example also demonstrates basic two-way communication, including requesting device information, and supports extended configuration messages used by newer Efento devices. Although this tutorial uses Python and PostgreSQL, the same approach can be implemented using other programming languages and databases.
 
-This quick tutorial will show you how to set up a simple CoAP server, which receives the data from Efento NB-IoT sensors and saves it to a PostgreSQL database. In this tutorial we are using Python and PostgreSQL database, but the same idea can be easily implemented in other programming languages / with different databases. Should you have any issues or questions, feel free to drop us a line at help.efento.io
+If you have any questions or encounter issues, please contact us at [help.efento.io](https://help.efento.io/).
 
-# How does it work?
+## How does it work?
 
-Efento NB-IoT sensors send the data in Protobuf format using CoAP protocol. This guarantees fast transmissions and small size of data, which results in up to 10 years battery life time. Moreover, as both CoAP and Protobuf are popular standards, it’s easy to integrate Efento wireless sensors with any cloud platform or custom application. To learn more about CoAP and Protobuf, please visit our Knowledge Library.
-The Python Script we are going to write sets up the CoaP server. The server is constantly listening for data sent by Efento NB-IoT sensors. Once a new message arrives, the server parses the data, saves it in the PostgreSQL database and responds to the sensor with confirmation that the message has been received (code  2.01 “CREATED”). This means that the message has been successfully parsed and saved in the database. If anything goes wrong (e.g. database is down), the sensor will receive a response with code 5.00 “INTERNAL_SERVER_ERROR” . In that case, the NB-IoT sensor will retry to send the same data after a while.
+### Measurement Processing and Server Responses
 
-Important! The response time from the server to the sensor should be as short as possible. In real-life integrations, the data received by the server should be pushed to a queue, and server should reply with 2.01 CREATED as quickly as possible. Saving the data to the database before responding to the sensor decreases the sensor’s battery life time.
+Efento NB-IoT loggers communicate with the server using CoAP (Constrained Application Protocol), while the transmitted data is encoded using Protocol Buffers (Protobuf). CoAP is a lightweight protocol designed for devices with limited resources, and Protobuf provides a compact binary format for serializing structured data. Together, they reduce communication overhead and the amount of data transmitted over the NB-IoT network, helping minimize energy consumption and support a battery lifetime of up to 8 years, depending on operating conditions.
 
-![](https://lh6.googleusercontent.com/gfeMm1PboXI1jHs-7el3QrmaTYSk47EV1Yc2Txd1z05DVfA2Y-_4DtjK1ZegoGT2chbGKPUBjS0gP4m-b890FKmsALcnwATTmEpdi5YldJdpLzPKoU0Rxu1WU96kSjaBOtSJ_YB-)
+The Python application provided in this repository runs a CoAP server that continuously listens for incoming messages from Efento NB-IoT loggers. When a measurement message arrives, the server decodes the Protobuf payload, extracts the measurement values and stores them in a PostgreSQL database.
 
-On top of the messages with the measurements, the sensor sends three other types of messages:
+For confirmable measurement messages, the server sends a CoAP response with code **2.01 Created** after successfully processing and saving the received data. If an error occurs while saving measurements to PostgreSQL, the server returns **5.00 Internal Server Error** instead. This error handling applies to database operations performed by the example script; other failures, such as losing the database connection before processing a message, may require additional error handling. The error response allows the logger to recognize that the transmission was not completed successfully and retry sending the data according to its retry mechanism.
 
-- Configuration – these messages are sent by the sensor in order to synchronise its configuration with the server. On startup, the sensor will send its current configuration to the server. Later on, the message with sensor’s configuration is sent to the server any time the user reconfigures the device over Bluetooth or in case of any errors that sensor reports to the server (sensor sends the error codes). If the Configuration message contains an error code, it is confirmable and must be confirmed by the server. Otherwise, the Configuration messages are non-confirmable.
-- Device info – message contains detailed radio and battery statistics of the device. This message is sent to the server on device’s startup or on server’s request. The first Device Info message is sent by the sensor on startup and requires confirmation from the server. The Device Info messages sent on server’s request are non-confirmable.
-- Time – sensor’s request to the server used to obtain the current time. This message is sent by the sensor only in case when it is not able to receive the current time from the network. Time messages sent by the sensor to the server are always confirmable. The server returns current time stamp in the confirmation message’s payload.
-In this example, we are going to log the Configuration and Device info messages sent by the sensor to a file. In real-life integrations, the Configuration and Device Info may be ignored, but the device must receive confirmation (ACK with code 2.01 “CREATED”) to each confirmable messages sent to the server.
+The diagram below illustrates the measurement handling process, from receiving a message to sending a response to the logger.
 
-# Before you start
+![CoAP measurement processing and server response flow](images/measurement-flow.png)
 
-Before you start this, you will need to install and configure:
+*Figure 1. CoAP measurement processing and server response flow.*
 
-  
+> **Important:** The server's response time should be kept as short as possible. In this example, measurements are saved directly to PostgreSQL before the confirmation is sent. In production environments, a message queue or another asynchronous processing mechanism is recommended to reduce response delays and avoid unnecessary battery consumption.
 
--   Pycharm or any Python 3 IDE
-    
--   PostgreSQL server
-    
+For more information about CoAP and Protobuf, visit the [Efento Knowledge Library](https://getefento.com/libraries/).
 
-  
+### Other Message Types
 
-You will also need:
+In addition to measurement data, Efento NB-IoT loggers send several types of messages to the server, including configuration updates, diagnostic information and time synchronization requests. These messages allow the server to monitor device operation, receive configuration information and support communication with the loggers.
 
--   Efento NB-IoT sensors
-    
--   Proto files used to deserialize the data coming from the sensors
-    
+The following message types are supported by the example CoAP server:
 
-# PostgreSQL database
+- **Configuration (`/c`)** – These messages are sent by the logger to synchronize its configuration with the server. When the logger starts up, it sends its current configuration to the server. Subsequently, configuration messages are sent whenever the user changes the device settings via Bluetooth or when the logger reports an error to the server (including the corresponding error code). If a Configuration message contains an error code, it is confirmable and must be acknowledged by the server. Otherwise, Configuration messages are non-confirmable.
+- **Device Info (`/i`)** – These messages contain detailed information about the device, including radio communication parameters and battery statistics. The logger sends a Device Info message at startup or in response to a request from the server. The initial Device Info message sent at startup is confirmable and must be acknowledged by the server. Device Info messages sent in response to a server request are non-confirmable.
+- **Time (`/t`)** – These messages are sent when the logger needs to obtain the current time from the server. The logger sends a Time request only if it is unable to retrieve the current time from the cellular network. Time requests are always confirmable, and the server returns the current timestamp in the payload of its response.
+- **Extended Configuration (`/e`)** *(available from software version 7.0.0 onwards)* – These messages contain additional information about the device configuration, including the logger name, extended configuration hash and calibration parameters. The logger sends an Extended Configuration message when relevant settings are changed via Bluetooth using the Efento mobile application.
 
-  
+In this example, measurement data is stored in a PostgreSQL database, while Configuration, Device Info and Extended Configuration messages are decoded and saved to separate text files for inspection. Time requests are handled by returning the current timestamp in the server's response.
 
-After downloading and installing PostgreSQL you will need to create the first database. This is one of the steps during the PostgreSQL installation. By default, the database will be created with the following credentials:
-
-  
-
-
-
-DATABASE_HOST = 'localhost'
-DATABASE_USER = 'postgres';
-DATABASE_PASSWORD = 'Your password';
-DATABASE_NAME = 'postgres';
-
-  
-
-If you want to, you can change the names / credentials. Write them down, as they will be needed in the next steps. If you want to check database credentials, open pgAdmin in the PostgreSQL folder. Next open **Object -> Properties -> General**
-
-
-
-![](https://lh3.googleusercontent.com/HWY9bIZjX3RSSPpQ-ju6PgwIJQN9-a9_wMuW6Wxj519QCiXhRTMrlnv_BMVMDdkw54aJKxW7Bjw8C2UoVSFeV7ldTP5yvNXuGlsbnFcdn0KWAlfEhgnnB8puEPhNT_MY7MdXWbPC)
-
-  
-
-## Create table
-
-  
-
-To save the measurements coming from Efento Gateway in your database, you need to create a table. In this example, we are creating a very simple table to store all the data from the sensors, no matter what the sensor type. The table will have 6 columns, all of them of “text” type. **Please note that this architecture of the database is only for the demonstration purposes. Database structure should be selected according to your project requirements.**
-
-You can create the table manually, using pgAdmin’s interface or using a SQL query. In pgAdmin select your database, open Tools menu: Tools -> Query Tools. Copy the request below into the **Query Editor** and **click Execute (▶) :**
-
-  
-  
-
-    CREATE TABLE measurements (
-    measured_at text ,
-    serial_number text ,
-    battery_ok text ,
-    type text,
-    channel text,
-    value text);
-
-  
-
-![](https://lh4.googleusercontent.com/MZ97tlWz-HDCd3xBoFWPrqpepvluOKt5HMCltb3nSERYritAwPanXh8F9RiOIDybtjxGZZCl6dFqt_j_mc9wAVlHRa4p2zOAEwltyylU1EuNXCBmvkCsoeTS3pXlF8afhWWfD2l7)
-  
-
-CREATE TABLE will create a new, initially empty table in the current database. The table will be owned by the user issuing the command.
-
-# CoAP Server
+In production integrations, Configuration and Device Info messages do not necessarily need to be stored or processed. However, the server must acknowledge every confirmable message received from the logger with an appropriate CoAP response (ACK with code **2.01 Created** in this example).
 
 ## Before you start
 
-The script uses a bunch of libraries. Before you start, you will need to download and install the following libraries:
+Before following this tutorial, make sure you have the following software installed:
 
--   **psycopg2** - Psycopg is the most popular PostgreSQL database adapter for the Python programming language. If You want to know more check [https://www.psycopg.org/docs/](https://www.psycopg.org/docs/).
+- **Python 3** – Required to run the CoAP server.
+- **Python IDE or code editor** – Such as Visual Studio Code, PyCharm or another editor that supports Python.
+- **PostgreSQL** – Used to store measurements received from Efento NB-IoT loggers. The pgAdmin tool is recommended for database configuration and management.
+- **Protocol Buffers compiler (`protoc`)** – Required to generate Python classes from Efento's `.proto` files.
 
--   **aiocoap** - The aiocoap package is an implementation of CoAP, the Constrained Application Protocol. It is written in Python 3 using its native asyncio methods to facilitate concurrent operations while maintaining an easy to use interface. If You want to know more about aiocoap check: [https://aiocoap.readthedocs.io/en/latest/](https://aiocoap.readthedocs.io/en/latest/)
+You will also need:
 
--   **asyncio** - asyncio is a library to write concurrent code using the async/await syntax. asyncio is used as a foundation for multiple Python asynchronous frameworks that provide high-performance network and web-servers, database connection libraries, distributed task queues, etc. If You want to know more about asyncio 
--   protobuf - is a free and open source cross-platform library used to serialize structured data. It is useful in developing programs to communicate with each other over a network or for storing data.
+- **Efento NB-IoT logger**
+- **Efento Protocol Buffers definitions** – Available in the [Proto-files repository](https://github.com/efento/Proto-files).
 
--   **base64** - This module provides functions for encoding binary data to printable ASCII characters and decoding such encodings back to binary data. It provides encoding and decoding functions for the encodings specified in [RFC 3548](https://tools.ietf.org/html/rfc3548.html), which defines the Base16, Base32, and Base64 algorithms, and for the de-facto standard Ascii85 and Base85 encodings.
+The required Python libraries and their installation are covered in the **CoAP Server** section.
 
--   **datetime** - The datetime module supplies classes for manipulating dates and times.
-   
-## Compiling Protocol Buffers
+> The commands in this tutorial are demonstrated on Windows. Some commands and file paths may differ depending on your operating system.
 
-Protocol buffers (or Protobuf) are a method of serializing the data that can be transmitted between microservices, applications or used in communication between IoT devices and servers. Protocol Buffers have the same function as well known and widely used JSON and XML. Like JSON and XML, the Protobufs are language-neutral and platform-neutral. Moreover, Protobuf is optimised to be fast and use as little network bandwidth as possible by minimizing the size of transmitted data. This makes Protobuf a perfect choice for serializing the data sent by the battery powered IoT devices.
+## PostgreSQL database
 
-  
+PostgreSQL is used to store measurement data received from Efento NB-IoT loggers.
 
-Unlike JSON and XML, the data and context are separated in Protobuf. Context is defined in the configuration files called proto files (.proto). These files contain field names along with their types and identifiers (eg. string first_name = 1; string surname = 2;), based on the configuration fields Protobuf data is being serialized. The proto files can be compiled to generate code in the user’s selected programming language – a class with setters and getters for all the fields defined in the proto file. Currently, Google provides a code generator for multiple languages including C++, C#, Dart, Go, Java and Python under an open source license.
+Download and install PostgreSQL from the [official website](https://www.postgresql.org/download/). During installation, you will be asked to set a password for the `postgres` database user. Make sure to save this password, as it will be required when configuring the CoAP server.
 
-  
+The installation typically includes **pgAdmin**, a graphical tool for managing PostgreSQL databases. We will use it to create the `measurements` table and verify that the logger data has been stored correctly.
 
-In order to compile the proto file to a Python class, you will require a protobuf compiler. If you don’t have the compiler yet, download the compiler from its official Github repository: [https://github.com/protocolbuffers/protobuf/releases](https://github.com/protocolbuffers/protobuf/releases). You need to download the compiler dedicated for the operating system you are using (eg. for Windows download [protoc-21.7-win64.zip](https://github.com/protocolbuffers/protobuf/releases/download/v21.7/protoc-21.7-win64.zip) and unzip it)
+For a local installation, the following database settings can be used:
 
-  
+```dotenv
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USER=postgres
+DATABASE_PASSWORD=your_password_here
+DATABASE_NAME=postgres
+```
 
-Once you have the protbuf compiler, download the proto files, unzip the folder and place the files in the same directory as the protobuf compiler (if you are using Windows .../protoc-3.17.1-win64/bin/). Run the protocol buffer compiler protoc on your .proto files - open a terminal window and enter:
+Replace `your_password_here` with the password you set during installation. If you use a different database name, username or port, adjust these values accordingly.
 
-  
+These settings will later be added to the `.env` file used by the Python server.
 
-    protoc --python_out=.. proto_measurement_types.proto
-    protoc --python_out=.. proto_measurements.proto
-    protoc --python_out=.. proto_device_info.proto
-    protoc --python_out=.. proto_config.proto
-    protoc --python_out=.. proto_rule.proto
-  
+### Create Table
 
-This will generate:
+To store measurements received from Efento NB-IoT loggers, you need to create a table in your PostgreSQL database.
 
--  " proto_measurement_types_pb2.py”,
--  “proto_measurements_pb2.py”,
--  “proto_device_info_pb2.py”,
--  “proto_config_pb2.py”
--  “proto_rule_pb2.py”
-    
+In this example, we use a simple table named `measurements` with six columns. All columns use the `text` data type to accommodate measurements from different types of sensors.
 
-in your specified destination directory. Move the files to your project directory (your_python_project/protos/protos_files). **Note! The repository with the sample code already contains classes resulting from compiling the proto files. If you use the sample code, you can skip this step.**
+> This database structure is intended for demonstration purposes only. In production environments, the database schema and data types should be selected according to the requirements of your application.
 
-# NB-IoT sensor configuration
+To create the table using pgAdmin:
 
-Configuration of Efento sensors is done with a free mobile application for Android. Application can be downloaded from [Google Play](https://play.google.com/store/apps/details?id=pl.efento.cloud&hl=en). Once you download and install the application select “Nearby sensors” mode and unlock the power user mode: open the application menu and quickly tap the Efento logo five times.
+1. Open pgAdmin and connect to your PostgreSQL server.
+2. In the left panel, expand **Servers → PostgreSQL → Databases** and select the database you want to use (in this example, `postgres`).
+3. Open **Tools → Query Tool**.
+4. Paste the following SQL statement into the Query Editor:
 
-![](https://lh3.googleusercontent.com/m-Ji8vdko83JCWkxPgTTona6mca_gY5UnAFJcgLML1tpP_lQed-9oxFcM7DX2QEbjn9EqdEO6TWablScLmbVLP0lMrA_8yE4-OaeY0hCtnchCMq8t-Tb37JioBKho797429joQU3)
+   ```sql
+   CREATE TABLE measurements (
+       measured_at text,
+       serial_number text,
+       battery_ok text,
+       type text,
+       channel text,
+       value text
+   );
+   ```
 
-  
+5. Click **Execute (▶)** to run the query.
 
-Before you start the configuration, make sure the sensor is able to register in the NB-IoT network and the APN settings are right and the APN you use allows the device to connect to the server. Detailed user manual of Efento NB-IoT sensors and Efento mobile application can be found in the support section of our website.
+![Creating the measurements table in PostgreSQL using pgAdmin](images/pgadmin-create-table.png)
 
-  
+*Figure 2. Creating the measurements table in PostgreSQL using pgAdmin.*
 
-Using the mobile application, connect to the sensor -> click on the menu (three dots in the upper right corner) -> Cellular network status. Mare sure that the field “Registration status” value is either “REGISTERED” or “REGISTERED_ROAMING”
+If the query executes successfully, PostgreSQL creates an empty table named `measurements`. The CoAP server will use this table to store measurements received from Efento loggers.
 
-  
+## CoAP Server
 
-![](https://lh6.googleusercontent.com/8QpNMX8uRSsyIEF6L955-gA1V6Lqp7x-LbvSJyfCiwKa2BHeu3oDBORd_OIPjUaIAPVwCxt1C6a7sSpB-f4h5ApLkdU5VNi5XW0QGlsPJIxCbc60kycaMm4lzdcZqUMH3t__gDyK)![](https://lh6.googleusercontent.com/FaYLCvdC-ogpwdCfJHi6BZavTc68YHX0uEWRnnDSBsSXrmZmM9AWYD_PS2HdILlDMWH0TDgGYUC4VwDEHwityLzV11cTohEsegCaBhVPKJfHiRfJPMpHo4l5R_ULQaZVWi8qBt2j)
+### Python Dependencies
 
-Set the sensor to send the data to your server. Connect to the sensor -> click on the menu (three dots in the upper right corner) -> Power user -> Server configuration. Select “Other” and fill in the IP address and the port of the server. **Note! The IP address used for setting up the CoAP server must be a static, public IP. If you are running the script on your computer, make sure you set the port forwarding on your router right.**
+Before running the CoAP server, install the Python libraries required by the example script:
 
-![](https://lh6.googleusercontent.com/SJrEYHJQdl6pw6tEPXvIZ3f3nFlkaNGsRXMJ6v3f8Po_CDL9Ohl4a1RBX5zxMJSuWfO-qxRWDe_U1fHsvQ-QDBpVbTf_jha9V0M3HJNRIZ7fDiiLyAwHCzWHAYFRl_BrAoZRzBq5)
+- **psycopg2-binary** – A PostgreSQL adapter that allows Python applications to connect to the database and store measurement data.
+- **aiocoap** – A Python implementation of the CoAP protocol, used to receive messages from Efento NB-IoT loggers and send responses.
+- **protobuf** – Used to deserialize the binary messages transmitted by Efento NB-IoT loggers into structured data.
+- **python-dotenv** – Loads database credentials and server settings from a local `.env` configuration file.
 
-# Results
+Open a terminal and install the libraries using the following command:
 
-When you run the script, all the data coming from the sensor will be saved in the database. To view the measurements open pgAdmin 4, select your database, then open **Tools > Query Tools.**
-Enter the request below into the **Query Editor** and select **Execute (▶) :**
+```powershell
+python -m pip install psycopg2-binary aiocoap protobuf python-dotenv
+```
 
-    SELECT * FROM measurements;
+The script also uses standard Python modules such as `asyncio`, `base64`, `datetime`, `json` and `os`. These modules are included with Python and do not require separate installation.
 
-![](https://lh3.googleusercontent.com/j8X4_jFxXuGKqogMaG-3bHfQi454-D-zQYFHy-3pbpd0XBcxxk-VdATiFYxBU4UgOB-db4VSNbJQj0mnXYIENjThpA7yNKwOP_hpmlYeK6VhqJ3gGdiFbjfZtKyOPVnYJRANLmtu)
+### Compiling Protocol Buffers
 
-# Moving on - adding two way communication
+Protocol Buffers (Protobuf) is a binary serialization format used by Efento NB-IoT loggers to transmit measurement data, device information and configuration messages. Unlike text-based formats such as JSON or XML, Protobuf uses a compact binary representation, reducing the amount of data transmitted.
 
-All parameters of Efento NB-IoT sensors can be changed remotely, from a server. The new configurations or server requests are sent in the responses (ACK) to the messages sent by the sensor.
+To decode these messages, the server needs Python classes generated from Efento's Protocol Buffers definitions (`.proto` files). These definitions describe the structure of messages, including field names, types and identifiers.
 
-We are going to modify the script from the example above to add a “device info” request sent from the server to the sensor. Device info is used by the sensor to send detailed information about the sensor's operations and radio-related statistics to the server. In order to increase the battery lifetime, this information is sent by the sensor only at the server's request. The server can request "device info" by sending a proper flag in the response to any of the sensor's confirmable message.Once the server receives the device info frame from the sensor, it will parse it and log to a file.
+1. **Download the Protocol Buffers compiler**
 
-Device info message sent by Efento sensor contains information about:
+   Download the compiler (`protoc`) for your operating system from the [official Protocol Buffers releases page](https://github.com/protocolbuffers/protobuf/releases).
 
--   serial number,
--   software version and commit ID,
--   runtime information:
-	-  uptime,
-	-  number of messages sent,
-	-   processor temperature,
-	-   the lowest battery voltage,
-	-   processor temperature during the lowest battery voltage,
-	-   battery reset timestamp,
-	-   max processor temperature,
-	-   min processor temperature,
-	-   runtime errors,
--   modem information:
-	-   modemy type and version,
-	-   network / signal related parameters (CMSA, CMSA, NCMSA, MSS, SP, TP, TxP, C.ID, ECL, SNR, EARFCN, PCI, RSRQ, UPLINK, DOWNLINK),
--   memory usage statistics
+   For Windows, download the appropriate `protoc-...-win64.zip` archive and extract it. The compiler executable is located in the `bin` folder.
 
-# How does it work?
+2. **Download Efento's Protobuf definitions**
 
-![](https://lh6.googleusercontent.com/G9HCgoQ8L90MhOCTHkKrA6oLLnQXKIZakV2GMaPVhFehXdI565XPZK0O6rn4vGgnhT7J25CyfG6rbebTjxlZ4CUjwuEVvFfOag9JH-scBLypKPlJZ1TbrialQEf5sKhiegWeG-W5)
+   Download the `.proto` files from the [Efento Proto-files repository](https://github.com/efento/Proto-files) by selecting **Code → Download ZIP**, then extract the archive.
 
-The CoAP server is constantly listening for data sent by Efento NB-IoT sensors. Once a new message arrives, the server parses the data, saves it in the PostgreSQL database and responds to the sensor with request device info and confirmation that the message has been received (code 2.01 “CREATED”). The response sent by the server will also contain a “Device info flag” - once the sensor receives it, it will send a second message with the detailed statistics (device info). The same approach can be applied to change the sensor's settings.
+   The repository contains seven definitions required by this example:
 
-![](https://lh6.googleusercontent.com/Xj7NoZYfNIqbjqx5qi4yRmmBNEqzXGXNKL9F_TDaVe7VQbA089IrQcdNtc80fq3jkIUrO9zMMm_e2IS4ZYXGxs3y4MkadsVOrTNAIbEd-kviAofVSc8hGC3wc7lUtZjtflMHhRWS)
+   - `proto_measurement_types.proto`
+   - `proto_measurements.proto`
+   - `proto_config_types.proto`
+   - `proto_config_rule.proto`
+   - `proto_config.proto`
+   - `proto_extended_configuration.proto`
+   - `proto_device_info.proto`
 
+3. **Generate the Python modules**
 
-## Results
+   Open a terminal in the folder containing the downloaded `.proto` files.
 
-  
+   Run the following command in PowerShell, replacing the example paths with the actual locations of your compiler and project:
 
-When you run the script, all the data coming from the gateway will be saved in the database. To view the measurements open pgAdmin 4, select your database, then open **Tools > Query Tools.**
-Enter the request below into the **Query Editor** and **select Execute (▶) :**
+   ```powershell
+   & "C:\path\to\protoc.exe" --proto_path=. --python_out="C:\path\to\NB-IoT-loggers-integration-main\protobuf" proto_measurement_types.proto proto_measurements.proto proto_config_types.proto proto_config_rule.proto proto_config.proto proto_extended_configuration.proto proto_device_info.proto
+   ```
 
-    SELECT * FROM measurements;
+   The compiler generates seven Python modules ending in `_pb2.py` and saves them directly in the project's `protobuf` folder.
 
-![](https://lh3.googleusercontent.com/j8X4_jFxXuGKqogMaG-3bHfQi454-D-zQYFHy-3pbpd0XBcxxk-VdATiFYxBU4UgOB-db4VSNbJQj0mnXYIENjThpA7yNKwOP_hpmlYeK6VhqJ3gGdiFbjfZtKyOPVnYJRANLmtu)
+4. **Verify the generated files**
 
-On top of that, after each confirmable message, the sensor will send a “Device Info” message which will be saved in the Deviceinfo.txt file
+   Check that the `protobuf` folder contains the following files:
 
-![](https://lh5.googleusercontent.com/eT1nKdlwD669HMF1Cgew5PeUiU7MD1WC5vImXfb62KlWLgCjv3hD7sxo4a7ERW7TWIozoppDMChEGddlrhpy-BCkdCqPlQlVTMtpINi9GezoabZkQKOyFEzfzVOJBGKh5zkVybjA)
+   ```text
+   protobuf/
+   ├── proto_measurement_types_pb2.py
+   ├── proto_measurements_pb2.py
+   ├── proto_config_types_pb2.py
+   ├── proto_config_rule_pb2.py
+   ├── proto_config_pb2.py
+   ├── proto_extended_configuration_pb2.py
+   └── proto_device_info_pb2.py
+   ```
+
+   These modules are required to run the example server. They are not included in the integration repository and must be generated before starting the application.
+
+### Running the CoAP Server
+
+Once the required Python libraries are installed and the Protobuf modules have been generated, you can configure and start the CoAP server.
+
+1. **Configure the environment file**
+
+   In the project directory, locate the `.env.example` file and create a copy named `.env`.
+
+   Open `.env` in a text editor and update the settings:
+
+   ```dotenv
+   # PostgreSQL database configuration
+   DATABASE_HOST=localhost
+   DATABASE_PORT=5432
+   DATABASE_USER=postgres
+   DATABASE_PASSWORD=your_password_here
+   DATABASE_NAME=postgres
+
+   # CoAP server configuration
+   COAP_HOST=127.0.0.1
+   COAP_PORT=5683
+   ```
+
+   Replace the database credentials with the values configured during PostgreSQL installation.
+
+   For `COAP_HOST`, enter the local IP address of the computer running the server. For a local-only setup, you can use `127.0.0.1`. **Before testing communication with a physical NB-IoT logger, replace `127.0.0.1` with the computer's local network IP address**, so the server can receive incoming traffic from the NB-IoT network.
+
+   `COAP_PORT` specifies the UDP port on which the server listens. You can use `5683`, the standard CoAP port, or another available UDP port. Make sure the selected port is permitted by your firewall and correctly forwarded by your router if necessary.
+
+2. **Start the CoAP server**
+
+   Open a terminal in the project directory and run:
+
+   ```powershell
+   python .\NB-IoT-sensors-integration-2-way-communication.py
+   ```
+
+   Keep the terminal open while the server is running. The server listens for incoming CoAP messages and processes them according to their endpoint.
+
+   If you need to stop the server, you can do so at any time by pressing **Ctrl+C** in the terminal where it is running.
+
+3. **Verify that the server is listening**
+
+   Open a second terminal. On Windows, you can use the following PowerShell command:
+
+   ```powershell
+   Get-NetUDPEndpoint -LocalPort 5683
+   ```
+
+   Replace `5683` with the value configured in `COAP_PORT`. On other operating systems, different commands may be required to check whether the server is listening on the specified port.
+
+   If the server is running correctly, the command should display a UDP endpoint with the configured local address and port.
+
+   > A successfully started server does not necessarily mean that it is reachable from the NB-IoT network. The destination address, firewall rules and any required UDP port forwarding must also be configured correctly.
+
+## NB-IoT Logger Configuration
+
+Configuration of Efento NB-IoT loggers is performed using the Efento mobile application, available from [Google Play](https://play.google.com/store/apps/details?id=pl.efento.cloud) / [App Store](https://apps.apple.com/pl/app/efento/id6479740909).
+
+### Check the NB-IoT Network Connection
+
+Before configuring the destination server, make sure the logger is registered with the NB-IoT network and that its APN settings allow communication with the server.
+
+To check the network connection:
+
+1. Open the Efento mobile application and select **Nearby devices**.
+2. Connect to your NB-IoT logger via Bluetooth.
+3. Tap the **gear icon** in the upper-right corner to open the device settings.
+4. Under **Diagnostics**, select **Network status**.
+5. Check the **Registration status** field. It should display either `REGISTERED` or `REGISTERED_ROAMING`.
+
+![Efento mobile app: Network status](images/network-status.png)
+
+These statuses indicate that the logger is registered with the cellular network, but they do not necessarily mean that it can successfully communicate with your CoAP server.
+
+### Configure the Destination Server
+
+To configure the logger to send data to your own CoAP server:
+
+1. Connect to the logger in the **Nearby devices** section of the Efento mobile application.
+2. Tap the **gear icon** in the upper-right corner to open the device settings.
+3. Under **Cellular**, select **Server settings**.
+4. Select **Other** as the destination server.
+5. Enter the IP address or hostname of your CoAP server in the **IP address or hostname** field.
+6. Enter the server's UDP port in the **Port** field. This must match the public port configured for your server.
+7. Under **Token authentication mode**, select the appropriate option. For this example, choose **Do not send**.
+8. **Save** the settings to apply the new server configuration.
+
+![Efento mobile app: Server settings](images/server-settings.png)
+
+To verify communication with your CoAP server without waiting for the next scheduled transmission, go back to the device settings and select **Cellular → Trigger transmission** to manually initiate data transmission.
+
+If the CoAP server is running on a computer behind a router, make sure the selected UDP port is correctly forwarded to that computer and that incoming traffic is permitted by the firewall.
+
+### Results
+
+Once the Efento NB-IoT logger has transmitted data to the CoAP server, the received measurements should be stored in the PostgreSQL database.
+
+To view the measurements:
+
+1. Open pgAdmin and connect to your PostgreSQL server.
+2. Select the database configured in your `.env` file.
+3. Open **Tools → Query Tool**.
+4. Enter the following SQL query:
+
+   ```sql
+   SELECT * FROM measurements;
+   ```
+
+5. Click **Execute (▶)**.
+
+The query displays the measurements received from the logger, including the measurement timestamp, device serial number, battery status, measurement type, channel and value.
+
+If multiple loggers send data to the same server, their measurements are stored in the same table and can be distinguished by the `serial_number` column.
+
+![Measurement data stored in PostgreSQL](images/pgadmin-measurements.png)
+
+*Figure 5. Measurement data received from Efento NB-IoT loggers and stored in PostgreSQL.*
+
+## Two-Way Communication
+
+Efento NB-IoT loggers support two-way communication, allowing the server not only to receive measurements and diagnostic information but also to send requests and configuration updates to the devices.
+
+To minimize power consumption, Efento NB-IoT loggers initiate communication with the server. When a logger sends a confirmable CoAP message, the server responds with an acknowledgement (ACK), which can also contain a request for the logger to perform a specific action.
+
+The example Python server demonstrates this mechanism by requesting **Device Info** from the logger. This allows the server to retrieve detailed diagnostic information, including firmware version, battery statistics, runtime information and cellular modem parameters.
+
+### Device Info
+
+The Device Info message provides detailed diagnostic information about the logger, including:
+
+- **Device identification:**
+  - serial number,
+  - software version and commit ID.
+- **Runtime information:**
+  - uptime,
+  - message counters,
+  - processor temperature,
+  - battery voltage,
+  - processor temperature recorded at the lowest battery voltage,
+  - battery reset timestamp,
+  - maximum and minimum processor temperatures,
+  - runtime errors and reset counter.
+- **Modem information:**
+  - modem type and firmware version,
+  - SIM card identification,
+  - cellular network and signal parameters, including RSRP, RSRQ, RSSI, SINR and other modem-specific statistics.
+- **Memory usage statistics.**
+
+The information received from the logger is decoded and saved to the `Deviceinfo.txt` file in a readable JSON format. The serial number is displayed in hexadecimal format.
+
+> The file is overwritten when a new Device Info message is received, so it contains the most recently received diagnostic information rather than a history of messages.
+
+Modem diagnostic parameters are stored as an array of numerical values. For a detailed explanation of these values for the Quectel BC660 modem, refer to the [`modem_parameters.md`](modem_parameters.md) file located in the main project directory.
+
+### How Does Two-Way Communication Work?
+
+When the logger sends a confirmable measurement message (`/m`), the server processes and saves the received data in PostgreSQL. If the operation succeeds, the server responds with an acknowledgement (ACK) containing the **2.01 Created** response code and the `device_info_request` flag set to `true`.
+
+After receiving this response, the logger sends a separate Device Info message to the `/i` endpoint. The server decodes the message and saves its contents to the `Deviceinfo.txt` file.
+
+This mechanism allows the server to request diagnostic data without establishing a separate connection to the logger.
+
+![Two-way CoAP communication and Device Info request flow](images/device-info-flow.png)
+
+*Figure 6. Two-way CoAP communication and Device Info request flow.*

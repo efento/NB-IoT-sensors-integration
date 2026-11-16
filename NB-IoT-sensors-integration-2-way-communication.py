@@ -1,15 +1,25 @@
+import json
 import base64
 import datetime
 import asyncio
 import os.path
 import time
 import logging
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
 
 import aiocoap.resource as resource
 import aiocoap
+
+# Add the generated Protobuf files directory to Python's module search path
+PROTOBUF_DIR = Path(__file__).resolve().parent / "protobuf"
+sys.path.insert(0, str(PROTOBUF_DIR))
+
 from protobuf import proto_measurements_pb2
 from protobuf import proto_device_info_pb2
 from protobuf import proto_config_pb2
+from protobuf import proto_extended_configuration_pb2
 from google.protobuf.json_format import MessageToDict
 import psycopg2
 import math
@@ -20,17 +30,22 @@ logger.setLevel(logging.INFO)
 # To save logs to a file set debug_logs to true
 debug_logs = True
 
-# Enter your database host, database user, database password and database name
-DATABASE_HOST = 'host_name';
-DATABASE_USER = 'database_user';
-DATABASE_PASSWORD = 'database_password';
-DATABASE_NAME = 'database_name';
+# Load environment variables from .env
+load_dotenv()
+
+# PostgreSQL database configuration
+DATABASE_HOST = os.environ["DATABASE_HOST"]
+DATABASE_PORT = int(os.getenv("DATABASE_PORT", "5432"))
+DATABASE_USER = os.environ["DATABASE_USER"]
+DATABASE_PASSWORD = os.environ["DATABASE_PASSWORD"]
+DATABASE_NAME = os.environ["DATABASE_NAME"]
 
 # Making the initial connection:
 conn = psycopg2.connect(
     dbname=DATABASE_NAME,
     user=DATABASE_USER,
     host=DATABASE_HOST,
+    port=DATABASE_PORT,
     password=DATABASE_PASSWORD
 )
 
@@ -44,7 +59,7 @@ class Tools:
         # Serializing device config.
         device_config = proto_config_pb2.ProtoConfig()
         # Set request_device_info to true
-        device_config.request_device_info = True
+        device_config.device_info_request = True
         # Sending current time to the sensor in order to synchronise its internal clock
         device_config.current_time = self.time
         return device_config.SerializeToString()
@@ -96,7 +111,7 @@ class Measurements(resource.Resource):
     async def render_post(self, request):
         # Creating a dictionary from a received message.
 
-        data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload), True)]
+        data = [MessageToDict(proto_measurements_pb2.ProtoMeasurements().FromString(request.payload), always_print_fields_with_no_presence=True)]
 
         record = []
         changeAt = []
@@ -108,7 +123,7 @@ class Measurements(resource.Resource):
             measurementPeriod = measurement['measurementPeriodBase'] * measurement['measurementPeriodFactor']
             # Keep this log format to facilitate troubleshooting with Efento support
             logger.info(" request: " + str(request) + " serial number: " + str(
-                base64.b64decode((measurement['serialNum'])).hex()) + " payload: " + str(
+                base64.b64decode((measurement['serialNumber'])).hex()) + " payload: " + str(
                 request.payload.hex()))
             channelNumberForAcc = 0
             for paramIndex, param in enumerate(measurement['channels']):
@@ -131,7 +146,7 @@ class Measurements(resource.Resource):
                             if param['timestamp'] + timeDifference in changeAt:
                                 value = changeAt[changeAt.index(param['timestamp'] + timeDifference) + 1]
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
-                                            base64.b64decode((measurement['serialNum'])).hex(),
+                                            base64.b64decode((measurement['serialNumber'])).hex(),
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_", ""), channelNumber, value)])
 
@@ -152,7 +167,7 @@ class Measurements(resource.Resource):
                                 value = self.majorValues[index] + ((param['startPoint'] + sampleOffset) // 6)
                             timeDifference = measurementPeriod * index
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
-                                            base64.b64decode((measurement['serialNum'])).hex(),
+                                            base64.b64decode((measurement['serialNumber'])).hex(),
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_", "").replace("_MINOR", ""),
                                             channelNumberForAcc, value)])
@@ -167,7 +182,7 @@ class Measurements(resource.Resource):
                             timeDifference = measurementPeriod * index
 
                             record.extend([(datetime.datetime.fromtimestamp(param['timestamp'] + timeDifference),
-                                            base64.b64decode((measurement['serialNum'])).hex(),
+                                            base64.b64decode((measurement['serialNumber'])).hex(),
                                             measurement['batteryStatus'],
                                             param['type'].replace("MEASUREMENT_TYPE_", ""), channelNumber,
                                             value)])
@@ -197,17 +212,18 @@ class DeviceInfo(resource.Resource):
     async def render_post(self, request):
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
-        data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload), True)]
+        data = [MessageToDict(proto_device_info_pb2.ProtoDeviceInfo().FromString(request.payload), always_print_fields_with_no_presence=True)]
+        # Convert the serial number from Base64 to hexadecimal format
+        if data[0].get("serialNumber"):
+            data[0]["serialNumber"] = base64.b64decode(
+                data[0]["serialNumber"]
+            ).hex()
         tools = Tools()
         response_payload = tools.set_timestamp()
 
-        # Create the file "Deviceinfo.txt" and save the date in this file
-        if not os.path.isfile("Deviceinfo.txt"):
-            file = open("Deviceinfo.txt", 'x')
-        else:
-            file = open("Deviceinfo.txt", 'w')
-        file.write(str(data))
-        file.close()
+        # Save device information in a readable JSON format
+        with open("Deviceinfo.txt", "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=2, ensure_ascii=False)
 
         return tools.create_response(request.mtype, request.token, aiocoap.Code.CREATED, response_payload)
 
@@ -222,7 +238,7 @@ class Configuration(resource.Resource):
 
         logger.info(" request: " + str(request) + " payload: " + str(request.payload.hex()))
         # Creating a dictionary from a message received from a sensor
-        data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload), True)]
+        data = [MessageToDict(proto_config_pb2.ProtoConfig().FromString(request.payload), always_print_fields_with_no_presence=True)]
         tools = Tools()
         response_payload = tools.set_timestamp()
         # Create the file "Configuration.txt" and save the date in this file
@@ -235,6 +251,53 @@ class Configuration(resource.Resource):
 
         return tools.create_response(request.mtype, request.token, aiocoap.Code.CREATED, response_payload)
 
+# Extended Configuration - handles messages sent to /e
+class ExtendedConfiguration(resource.Resource):
+
+    async def render_post(self, request):
+        logger.info(
+            "Extended configuration request: %s payload: %s",
+            request,
+            request.payload.hex()
+        )
+
+        try:
+            # Deserialize Extended Configuration
+            message = (
+                proto_extended_configuration_pb2
+                .ProtoExtendedConfiguration()
+            )
+            message.ParseFromString(request.payload)
+
+            data = MessageToDict(
+                message,
+                always_print_fields_with_no_presence=True
+            )
+
+            # Convert serial number from Base64 to HEX
+            if data.get("serialNumber"):
+                data["serialNumber"] = base64.b64decode(
+                    data["serialNumber"]
+                ).hex()
+
+            # Save the received configuration in a readable format
+            with open("ExtendedConfiguration.txt", "a", encoding="utf-8") as file:
+                file.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+            code = aiocoap.Code.CREATED
+
+        except Exception:
+            logger.exception("Failed to process Extended Configuration")
+            code = aiocoap.Code.INTERNAL_SERVER_ERROR
+
+        tools = Tools()
+
+        return tools.create_response(
+            request.mtype,
+            request.token,
+            code,
+            b""
+        )
 
 # Time - Class used to handle Time messages sent by the sensor
 class Time(resource.Resource):
@@ -264,9 +327,13 @@ async def main():
     root.add_resource(["c"], Configuration())
     # Set up “t” endpoint, which will be receiving time sent by Efento NB-IoT sensor using POST method
     root.add_resource(["t"], Time())
+    # Set up “e” endpoint, which will be receiving extended configuration messages sent by Efento NB-IoT sensor using POST method
+    root.add_resource(["e"], ExtendedConfiguration())
 
     # Starting the application on set IP address and port.
-    await aiocoap.Context.create_server_context(root, ("192.168.120.132", 5681))
+    await aiocoap.Context.create_server_context(
+    root, (os.getenv("COAP_HOST", "127.0.0.1"), int(os.getenv("COAP_PORT", "5683")))
+)
     # Getting the current event loop and create an asyncio.Future object attached to the event loop.
     await asyncio.get_running_loop().create_future()
 
